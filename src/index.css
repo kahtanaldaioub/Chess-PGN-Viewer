@@ -1,0 +1,9 @@
+
+@import "tailwindcss";
+
+.nav-btn {
+  @apply px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg shadow disabled:opacity-50 transition;
+}
+.tool-btn {
+  @apply px-3 py-2 bg-blue-700 hover:bg-blue-600 rounded-lg text-sm shadow disabled:opacity-50 transition;
+}
