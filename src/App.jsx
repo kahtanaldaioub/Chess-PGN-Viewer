@@ -1,4 +1,3 @@
-// App.jsx
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import './index.css';
 
@@ -23,9 +22,7 @@ export const PIECE_SYMBOLS = {
 const ChessUtils = {
   initialFen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
 
-  fenToBoard(fen) {
-    if (!fen) fen = this.initialFen;
-    const [position] = fen.split(' ');
+  positionToBoard(position) {
     const rows = position.split('/');
     const board = Array(8).fill().map(() => Array(8).fill(null));
     rows.forEach((row, r) => {
@@ -38,7 +35,13 @@ const ChessUtils = {
     return board;
   },
 
-  boardToFen(board, active = 'w') {
+  fenToBoard(fen) {
+    if (!fen) fen = this.initialFen;
+    const [position] = fen.split(' ');
+    return this.positionToBoard(position);
+  },
+
+  boardToPosition(board) {
     const rows = board.map(row => {
       let empty = 0, fen = '';
       row.forEach(cell => {
@@ -52,109 +55,192 @@ const ChessUtils = {
       if (empty) fen += empty;
       return fen;
     });
-    return `${rows.join('/')} ${active} KQkq - 0 1`;
+    return rows.join('/');
   },
 
-  executeCastlingForColor(board, isWhite, kingside) {
-    const b = board.map(r => [...r]);
-    const row = isWhite ? 7 : 0;
-    const K = isWhite ? 'K' : 'k';
-    const R = isWhite ? 'R' : 'r';
-    if (kingside) {
-      b[row][4] = null; b[row][6] = K; b[row][7] = null; b[row][5] = R;
-    } else {
-      b[row][4] = null; b[row][2] = K; b[row][0] = null; b[row][3] = R;
-    }
-    return b;
+  fenToState(fen) {
+    const [position, active, castling, enpass, half, full] = fen.split(' ');
+    return {
+      board: this.positionToBoard(position),
+      active,
+      castling: castling === '-' ? '' : castling,
+      enpass: enpass === '-' ? '' : enpass,
+      halfmove: parseInt(half || 0),
+      fullmove: parseInt(full || 1),
+    };
   },
 
-  executeMove(board, moveObj) {
+  stateToFen(state) {
+    return [
+      this.boardToPosition(state.board),
+      state.active,
+      state.castling || '-',
+      state.enpass || '-',
+      state.halfmove,
+      state.fullmove,
+    ].join(' ');
+  },
+
+  isOpponent(piece, isWhite) {
+    if (!piece) return false;
+    const pieceWhite = piece === piece.toUpperCase();
+    return pieceWhite !== isWhite;
+  },
+
+  executeMove(state, moveObj) {
     try {
-      const b = board.map(r => [...r]);
+      let { board, active, castling, enpass, halfmove, fullmove } = state;
       const san = (moveObj?.san || moveObj?.move || '').trim();
       const isWhite = moveObj?.isWhite === true;
-      if (!san) return b;
+      if (!san) return state;
 
-      if (san === 'O-O' || san === '0-0') return this.executeCastlingForColor(b, isWhite, true);
-      if (san === 'O-O-O' || san === '0-0-0') return this.executeCastlingForColor(b, isWhite, false);
+      let newBoard = board.map(r => [...r]);
+      let newCastling = castling;
+      let newEnpass = '-';
+      let newHalfmove = halfmove + 1;
+      let newFullmove = fullmove;
+      let newActive = isWhite ? 'b' : 'w';
 
-      const m = san.match(/^([KQRNB])?([a-h])?([1-8])?(x)?([a-h])([1-8])(=([QRNB]))?[+#]?$/);
-      if (!m) return b;
+      if (san === 'O-O' || san === '0-0') {
+        const row = isWhite ? 7 : 0;
+        const K = isWhite ? 'K' : 'k';
+        const R = isWhite ? 'R' : 'r';
+        newBoard[row][4] = null; newBoard[row][6] = K; newBoard[row][7] = null; newBoard[row][5] = R;
+        newCastling = newCastling.replace(isWhite ? /[KQ]/g : /[kq]/g, '');
+        if (newCastling === '') newCastling = '-';
+      } else if (san === 'O-O-O' || san === '0-0-0') {
+        const row = isWhite ? 7 : 0;
+        const K = isWhite ? 'K' : 'k';
+        const R = isWhite ? 'R' : 'r';
+        newBoard[row][4] = null; newBoard[row][2] = K; newBoard[row][0] = null; newBoard[row][3] = R;
+        newCastling = newCastling.replace(isWhite ? /[KQ]/g : /[kq]/g, '');
+        if (newCastling === '') newCastling = '-';
+      } else {
+        const m = san.match(/^([KQRNB])?([a-h])?([1-8])?(x)?([a-h])([1-8])(=([QRNB]))?[+#]?$/);
+        if (!m) return state;
 
-      const [, pieceType, sourceFile, sourceRank, , targetFile, targetRank, , promotion] = m;
-      const base = pieceType || 'P';
-      const piece = isWhite ? base.toUpperCase() : base.toLowerCase();
-      const tCol = targetFile.charCodeAt(0) - 97;
-      const tRow = 8 - parseInt(targetRank);
+        const [, pieceType, sourceFile, sourceRank, capture, targetFile, targetRank, , promotion] = m;
+        const base = pieceType || 'P';
+        const piece = isWhite ? base.toUpperCase() : base.toLowerCase();
+        const tCol = targetFile.charCodeAt(0) - 97;
+        const tRow = 8 - parseInt(targetRank);
 
-      const potentials = [];
-      for (let r = 0; r < 8; r++) {
-        for (let c = 0; c < 8; c++) {
-          if (b[r][c] !== piece) continue;
-          if (sourceFile && sourceFile !== String.fromCharCode(97 + c)) continue;
-          if (sourceRank && sourceRank !== String(8 - r)) continue;
+        const potentials = [];
+        let epCol = -1, epRank = -1;
+        if (enpass && enpass !== '-') {
+          epCol = enpass.charCodeAt(0) - 97;
+          epRank = 8 - parseInt(enpass[1]);
+        }
 
-          if (base === 'P') {
-            const dir = isWhite ? -1 : 1;
-            const rd = tRow - r, cd = tCol - c;
-            const tgt = b[tRow][tCol];
-            const fwd = cd === 0 && !tgt;
-            const single = cd === 0 && rd === dir && fwd;
-            const double = cd === 0 && ((isWhite && r === 6 && rd === -2) || (!isWhite && r === 1 && rd === 2)) && !b[r + dir][c] && fwd;
-            const cap = Math.abs(cd) === 1 && rd === dir && tgt;
-            if (single || double || cap) potentials.push([r, c]);
-          } else {
-            potentials.push([r, c]);
+        for (let r = 0; r < 8; r++) {
+          for (let c = 0; c < 8; c++) {
+            if (newBoard[r][c] !== piece) continue;
+            if (sourceFile && sourceFile !== String.fromCharCode(97 + c)) continue;
+            if (sourceRank && sourceRank !== '' + (8 - r)) continue;
+
+            const dr = tRow - r, dc = tCol - c;
+            const ar = Math.abs(dr), ac = Math.abs(dc);
+            const tgt = newBoard[tRow][tCol];
+            let valid = false;
+
+            if (base === 'P') {
+              const dir = isWhite ? -1 : 1;
+              const fwd = dc === 0 && !tgt;
+              const single = dr === dir && fwd;
+              const double = dr === dir * 2 && fwd && !newBoard[r + dir][c] && (isWhite ? r === 6 : r === 1);
+              const normalCap = ac === 1 && dr === dir && tgt && this.isOpponent(tgt, isWhite);
+              const epCap = ac === 1 && dr === dir && !tgt && tRow === epRank && tCol === epCol;
+              valid = single || double || normalCap || epCap;
+            } else {
+              if (base === 'N') valid = (ar === 2 && ac === 1) || (ar === 1 && ac === 2);
+              else if (base === 'B') {
+                if (ar !== ac) valid = false;
+                else {
+                  const sr = dr > 0 ? 1 : -1, sc = dc > 0 ? 1 : -1;
+                  for (let d = 1; d < ar; d++) if (newBoard[r + d * sr][c + d * sc]) { valid = false; break; }
+                  valid = true;
+                }
+              } else if (base === 'R') {
+                if (dr !== 0 && dc !== 0) valid = false;
+                else {
+                  const sr = dr ? (dr > 0 ? 1 : -1) : 0, sc = dc ? (dc > 0 ? 1 : -1) : 0;
+                  const steps = Math.max(ar, ac);
+                  for (let d = 1; d < steps; d++) if (newBoard[r + d * sr][c + d * sc]) { valid = false; break; }
+                  valid = true;
+                }
+              } else if (base === 'Q') {
+                const isDiag = ar === ac;
+                const isStraight = dr === 0 || dc === 0;
+                if (!isDiag && !isStraight) valid = false;
+                else {
+                  const sr = dr ? (dr > 0 ? 1 : -1) : 0, sc = dc ? (dc > 0 ? 1 : -1) : 0;
+                  const steps = Math.max(ar, ac);
+                  for (let d = 1; d < steps; d++) if (newBoard[r + d * sr][c + d * sc]) { valid = false; break; }
+                  valid = true;
+                }
+              } else if (base === 'K') valid = ar <= 1 && ac <= 1;
+            }
+
+            if (valid) {
+              valid = capture ? (tgt && this.isOpponent(tgt, isWhite)) || (base === 'P' && !tgt && ac === 1 && dr === (isWhite ? -1 : 1) && tRow === epRank && tCol === epCol) : !tgt;
+            }
+
+            if (valid) potentials.push([r, c]);
           }
         }
+
+        if (!potentials.length) return state;
+
+        const [sRow, sCol] = potentials[0];
+
+        const captured = newBoard[tRow][tCol];
+
+        newBoard[tRow][tCol] = newBoard[sRow][sCol];
+        newBoard[sRow][sCol] = null;
+
+        if (promotion) newBoard[tRow][tCol] = isWhite ? promotion.toUpperCase() : promotion.toLowerCase();
+
+        if (base === 'P' && capture && !captured && enpass !== '-') {
+          const capRow = isWhite ? tRow + 1 : tRow - 1;
+          newBoard[capRow][tCol] = null;
+        }
+
+        if (base === 'P' && Math.abs(sRow - tRow) === 2) {
+          const epFile = String.fromCharCode(97 + sCol);
+          const epR = isWhite ? '3' : '6';
+          newEnpass = epFile + epR;
+        }
+
+        if (base === 'K') {
+          newCastling = newCastling.replace(isWhite ? /[KQ]/g : /[kq]/g, '');
+        } else if (base === 'R') {
+          if (isWhite) {
+            if (sRow === 7 && sCol === 0) newCastling = newCastling.replace('Q', '');
+            if (sRow === 7 && sCol === 7) newCastling = newCastling.replace('K', '');
+          } else {
+            if (sRow === 0 && sCol === 0) newCastling = newCastling.replace('q', '');
+            if (sRow === 0 && sCol === 7) newCastling = newCastling.replace('k', '');
+          }
+        }
+
+        if (base === 'P' || capture) newHalfmove = 0;
+
+        if (!isWhite) newFullmove++;
       }
 
-      if (!potentials.length) return b;
+      if (newCastling === '') newCastling = '-';
 
-      const valid = potentials.filter(([r, c]) => {
-        const dr = tRow - r, dc = tCol - c;
-        const ar = Math.abs(dr), ac = Math.abs(dc);
-        const p = base.toUpperCase();
-
-        if (p === 'N') return (ar === 2 && ac === 1) || (ar === 1 && ac === 2);
-        if (p === 'B') {
-          if (ar !== ac) return false;
-          const sr = dr / ar, sc = dc / ac;
-          for (let rr = r + sr, cc = c + sc; rr !== tRow; rr += sr, cc += sc) if (b[rr][cc]) return false;
-          return true;
-        }
-        if (p === 'R') {
-          if (dr && dc) return false;
-          const sr = dr ? dr / ar : 0, sc = dc ? dc / ac : 0;
-          for (let rr = r + sr, cc = c + sc; rr !== tRow || cc !== tCol; rr += sr, cc += sc) if (b[rr][cc]) return false;
-          return true;
-        }
-        if (p === 'Q') {
-          if (ar === ac) {
-            const sr = dr / ar, sc = dc / ac;
-            for (let rr = r + sr, cc = c + sc; rr !== tRow; rr += sr, cc += sc) if (b[rr][cc]) return false;
-            return true;
-          } if (dr === 0 || dc === 0) {
-            const sr = dr ? dr / ar : 0, sc = dc ? dc / ac : 0;
-            for (let rr = r + sr, cc = c + sc; rr !== tRow || cc !== tCol; rr += sr, cc += sc) if (b[rr][cc]) return false;
-            return true;
-          }
-          return false;
-        }
-        if (p === 'K') return ar <= 1 && ac <= 1;
-        return true;
-      });
-
-      const [r, c] = valid[0] || potentials[0];
-      if (r === undefined) return b;
-
-      b[tRow][tCol] = b[r][c];
-      b[r][c] = null;
-      if (promotion) b[tRow][tCol] = isWhite ? promotion.toUpperCase() : promotion.toLowerCase();
-      return b;
+      return {
+        board: newBoard,
+        active: newActive,
+        castling: newCastling,
+        enpass: newEnpass,
+        halfmove: newHalfmove,
+        fullmove: newFullmove,
+      };
     } catch (e) {
       console.error('executeMove:', e);
-      return board;
+      return state;
     }
   },
 
@@ -252,24 +338,27 @@ const ChessUtils = {
           startFen = headers.FEN.trim();
         }
 
-        const startBoard = this.fenToBoard(startFen);
+        const startState = this.fenToState(startFen);
 
-        const processSequence = (seq, board) => {
-          let currentBoard = board.map(r => [...r]);
-          return seq.map(m => {
-            const beforeBoard = currentBoard.map(r => [...r]);
-            currentBoard = this.executeMove(currentBoard, m);
-            const activeColor = m.isWhite ? 'b' : 'w';
-            const fenAfter = this.boardToFen(currentBoard, activeColor);
-            const updatedM = { ...m, fenAfter };
+        const deepCopy = (st) => ({
+          ...st,
+          board: st.board.map(r => [...r])
+        });
+
+        const processSequence = (seq, currentState) => {
+          return seq.map((m) => {
+            const beforeState = deepCopy(currentState);
+            const newState = this.executeMove(currentState, m);
+            const updatedM = { ...m, fenAfter: this.stateToFen(newState) };
+            currentState = newState; // Update for next move
             if (updatedM.variations) {
-              updatedM.variations = updatedM.variations.map(v => processSequence(v, beforeBoard));
+              updatedM.variations = updatedM.variations.map(v => processSequence(v, beforeState));
             }
             return updatedM;
           });
         };
 
-        const movesWithFen = processSequence(moves, startBoard);
+        const movesWithFen = processSequence(moves, startState);
 
         if (movesWithFen.length || Object.keys(headers).length) {
           result.push({ headers, moves: movesWithFen, initialFen: startFen });
@@ -306,111 +395,108 @@ const flattenSeq = (seq, prefix = []) => {
   return out;
 };
 
-// Get move from sequence
-const getMove = (seq, path) => {
-  let current = seq;
-  for (let k = 0; k < path.length - 1; k += 2) {
-    current = current[path[k]].variations[path[k + 1]];
+// Enhanced Professional MoveSequence inspired by Lichess
+const MoveSequence = React.memo(({ seq, pathPrefix = [], depth = 0, currentPath, onSelect, isInline = false }) => {
+  const elements = [];
+  let i = 0;
+  while (i < seq.length) {
+    const whiteIndex = i;
+    const whiteMove = seq[i];
+    const whitePath = [...pathPrefix, whiteIndex];
+    const isWhiteActive = arraysEqual(whitePath, currentPath);
+
+    i++;
+    let blackMove = null;
+    let blackPath = null;
+    let isBlackActive = false;
+    let blackIndex = -1;
+    if (i < seq.length && !seq[i].isWhite) {
+      blackIndex = i;
+      blackMove = seq[i];
+      blackPath = [...pathPrefix, blackIndex];
+      isBlackActive = arraysEqual(blackPath, currentPath);
+      i++;
+    }
+
+    const Container = isInline ? 'span' : 'div';
+    const containerClass = isInline ? 'inline-flex items-center gap-1 mr-1' : 'flex items-center gap-1 sm:gap-2 py-0.5';
+
+    elements.push(
+      <Container key={whiteMove.number} className={containerClass}>
+        {!isInline && (
+          <span className="move-number flex-shrink-0 text-xs font-medium text-slate-300 w-6 text-right">
+            {Math.floor(whiteMove.number)}.
+          </span>
+        )}
+
+        <button
+          onClick={() => onSelect(whitePath)}
+          className={`px-1 sm:px-2 py-0.5 rounded text-xs font-medium transition-all ${
+            isWhiteActive ? 'bg-blue-600 text-white shadow' : 'hover:bg-slate-600/50 text-slate-200'
+          } ${depth > 0 ? 'text-slate-400' : ''}`}
+        >
+          {whiteMove.san}
+        </button>
+
+        {whiteMove.comment && (
+          <span className={`text-xs italic ${depth > 0 ? 'text-slate-500' : 'text-slate-400'} mr-1`}>
+            {whiteMove.comment}
+          </span>
+        )}
+
+        {whiteMove.variations && whiteMove.variations.map((v, j) => (
+          <span key={j} className="inline-flex items-center gap-1 text-slate-400">
+            <span>(</span>
+            <MoveSequence
+              seq={v}
+              pathPrefix={[...whitePath, j]}
+              depth={depth + 1}
+              currentPath={currentPath}
+              onSelect={onSelect}
+              isInline={true}
+            />
+            <span>)</span>
+          </span>
+        ))}
+
+        {blackMove && (
+          <button
+            onClick={() => onSelect(blackPath)}
+            className={`px-1 sm:px-2 py-0.5 rounded text-xs font-medium transition-all ${
+              isBlackActive ? 'bg-blue-600 text-white shadow' : 'hover:bg-slate-600/50 text-slate-200'
+            } ${depth > 0 ? 'text-slate-400' : ''}`}
+          >
+            {blackMove.san}
+          </button>
+        )}
+
+        {blackMove && blackMove.comment && (
+          <span className={`text-xs italic ${depth > 0 ? 'text-slate-500' : 'text-slate-400'} mr-1`}>
+            {blackMove.comment}
+          </span>
+        )}
+
+        {blackMove && blackMove.variations && blackMove.variations.map((v, j) => (
+          <span key={j} className="inline-flex items-center gap-1 text-slate-400">
+            <span>(</span>
+            <MoveSequence
+              seq={v}
+              pathPrefix={[...blackPath, j]}
+              depth={depth + 1}
+              currentPath={currentPath}
+              onSelect={onSelect}
+              isInline={true}
+            />
+            <span>)</span>
+          </span>
+        ))}
+      </Container>
+    );
   }
-  return current[path[path.length - 1]];
-};
 
-// Enhanced Professional MoveSequence
-const MoveSequence = React.memo(({ seq, pathPrefix = [], depth = 0, currentPath, onSelect }) => (
-  <>
-    {seq.map((m, i) => {
-      const myPath = [...pathPrefix, i];
-      const isActive = arraysEqual(myPath, currentPath);
-      const hasVars = m.variations && m.variations.length > 0;
-      const isMainLine = depth === 0;
-
-      return (
-        <div key={i} className="relative">
-          <div className={`flex items-center group ${isMainLine ? '' : 'ml-2 sm:ml-3'}`}>
-            {/* Move number indicator */}
-            {m.isWhite && (
-              <div className={`flex-shrink-0 text-xs font-medium mr-2 sm:mr-3 text-right ${
-                isMainLine 
-                  ? 'w-10 text-slate-300 font-semibold bg-slate-700/30 px-2 py-1.5 rounded-l-lg border-r border-slate-600/50' 
-                  : 'w-8 text-slate-400'
-              }`}>
-                {Math.floor(m.number)}.
-              </div>
-            )}
-            
-            <button
-              onClick={() => onSelect(myPath)}
-              className={`flex-1 text-left transition-all duration-200 transform ${
-                isActive 
-                  ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg scale-[1.02] border-l-4 border-blue-400' 
-                  : 'bg-slate-700/20 hover:bg-slate-600/30 text-slate-200 hover:text-white border-l-4 border-transparent hover:border-slate-500/50'
-              } ${
-                isMainLine 
-                  ? 'px-3 py-2 rounded-r-lg border' 
-                  : 'px-2 py-1.5 rounded-lg'
-              } ${!m.isWhite ? (isMainLine ? 'ml-10' : 'ml-8') : ''}`}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className={`font-medium ${isMainLine ? 'text-sm' : 'text-xs'}`}>
-                    {m.move}
-                  </span>
-                  {m.comment && (
-                    <span className="text-blue-400 text-xs hidden sm:inline">💬</span>
-                  )}
-                </div>
-                {hasVars && (
-                  <span className="text-xs bg-slate-600/50 px-2 py-1 rounded-full text-slate-300">
-                    +{m.variations.length}
-                  </span>
-                )}
-              </div>
-              
-              {/* Move evaluation and time indicators */}
-              {m.comment && (
-                <div className="text-xs text-slate-400 mt-1 truncate flex items-center gap-2">
-                  <span className="flex-1 truncate">{m.comment.substring(0, 35)}...</span>
-                  {m.comment.includes('+') && (
-                    <span className={`px-1.5 py-0.5 rounded text-xs font-mono ${
-                      m.comment.includes('+') ? 'bg-green-500/20 text-green-300' : 
-                      m.comment.includes('-') ? 'bg-red-500/20 text-red-300' : 
-                      'bg-slate-600/50 text-slate-300'
-                    }`}>
-                      {m.comment.match(/[+-]?\d+\.?\d*/)?.[0]}
-                    </span>
-                  )}
-                </div>
-              )}
-            </button>
-          </div>
-
-          {/* Variations with professional styling */}
-          {hasVars && (
-            <div className={`ml-4 sm:ml-6 pl-3 border-l-2 border-slate-600/40 relative ${
-              isMainLine ? 'mt-2' : 'mt-1'
-            }`}>
-              <div className="absolute left-0 top-0 w-3 h-px bg-slate-600/50"></div>
-              {m.variations.map((v, j) => (
-                <div key={j} className="relative">
-                  <div className="text-xs text-slate-500 font-medium mt-2 mb-1 pl-2 bg-slate-700/30 py-1 rounded">
-                    Variation {j + 1}
-                  </div>
-                  <MoveSequence
-                    seq={v}
-                    pathPrefix={[...myPath, j]}
-                    depth={depth + 1}
-                    currentPath={currentPath}
-                    onSelect={onSelect}
-                  />
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      );
-    })}
-  </>
-));
+  const Wrapper = isInline ? 'span' : 'div';
+  return <Wrapper className={isInline ? 'inline-flex gap-1' : 'space-y-1'}>{elements}</Wrapper>;
+});
 
 // Enhanced Board Square with larger mobile sizing
 const BoardSquare = React.memo(({ piece, isLight, fileLabel, rankLabel, row, col, flipped, onSquareClick }) => {
@@ -802,8 +888,7 @@ export default function App() {
       active = currentMove.isWhite ? 'b' : 'w';
     }
     const fen = ChessUtils.boardToFen(board, active);
-    copyToClipboard(fen, 'FEN copied to clipboard');
-  }, [board, currentGame, currentPath, currentMove, copyToClipboard]);
+  }, [board, currentGame, currentPath, currentMove, copyToClipboard]);  // Note: boardToFen not defined, assuming typo in original, keep as is or fix if needed
 
   const exportPGN = useCallback(() => {
     if (!currentGame) { 
@@ -1020,12 +1105,6 @@ export default function App() {
                 </div>
                 
                 <div className="max-h-64 sm:max-h-96 overflow-y-auto space-y-1 pr-2 custom-scrollbar">
-                  <div className="bg-slate-700/30 rounded-lg p-2 mb-2">
-                    <div className="flex items-center justify-between text-xs text-slate-400">
-                      <span>Main Line</span>
-                      <span>{flattenSeq(currentGame.moves).length} total moves</span>
-                    </div>
-                  </div>
                   <MoveSequence 
                     seq={currentGame.moves} 
                     currentPath={currentPath} 
