@@ -1073,7 +1073,7 @@ export default function App() {
             </div>
 
             {/* Enhanced Navigation Tabs */}
-            <div className="bg-slate-800/40 rounded-xl sm:rounded-2xl p-1 backdrop-blur-sm border border-slate-700/50">
+            {!isMobile &&<div className="bg-slate-800/40 rounded-xl sm:rounded-2xl p-1 backdrop-blur-sm border border-slate-700/50">
               <div className="flex space-x-1">
                 {['moves', 'analysis', 'info'].map((tab) => (
                   <button
@@ -1089,11 +1089,27 @@ export default function App() {
                   </button>
                 ))}
               </div>
-            </div>
-
+            </div> }
+                {!isMobile &&<div className="bg-slate-800/40 rounded-xl sm:rounded-2xl p-1 backdrop-blur-sm border border-slate-700/50">
+              <div className="flex space-x-1">
+                {['moves', 'analysis', 'info'].map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setActiveTab(tab)}
+                    className={`flex-1 py-2 px-2 sm:px-3 text-xs sm:text-sm font-medium rounded-lg sm:rounded-xl transition-all duration-300 capitalize ${
+                      activeTab === tab
+                        ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg'
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'
+                    }`}
+                  >
+                    {tab}
+                  </button>
+                ))}
+              </div>
+            </div> }
             {/* Professional Moves List */}
-            {currentGame && activeTab === 'moves' && (
-              <div className={`bg-slate-800/40 rounded-xl sm:rounded-2xl p-3 sm:p-4 shadow-xl border border-slate-700/50 backdrop-blur-sm transition-all duration-500 ${sidebarCollapsed ? 'opacity-0 scale-95' : 'opacity-100 scale-100'}`}>
+            {!isMobile && currentGame && activeTab === 'moves' && (
+              <div className={` bg-slate-800/40 rounded-xl sm:rounded-2xl p-3 sm:p-4 shadow-xl border border-slate-700/50 backdrop-blur-sm transition-all duration-500 ${sidebarCollapsed ? 'opacity-0 scale-95' : 'opacity-100 scale-100'}`}>
                 <div className="flex items-center justify-between mb-3 sm:mb-4">
                   <h3 className="text-base sm:text-lg font-semibold text-blue-300 flex items-center gap-2">
                     <span className="text-lg">📋</span>
@@ -1115,7 +1131,7 @@ export default function App() {
             )}
 
             {/* Game Information Panel */}
-            {currentGame && activeTab === 'info' && (
+            {!isMobile && currentGame && activeTab === 'info' && (
               <div className="bg-slate-800/40 rounded-xl sm:rounded-2xl p-3 sm:p-4 shadow-xl border border-slate-700/50 backdrop-blur-sm">
                 <h3 className="text-base sm:text-lg font-semibold text-blue-300 mb-3 sm:mb-4 flex items-center gap-2">
                   <span>ℹ️</span>
@@ -1144,76 +1160,6 @@ export default function App() {
               onPrevious={goToPreviousGame}
               onNext={goToNextGame}
             />
-            
-            {/* Enhanced Game Header */}
-            {currentGame && (
-              <div className="bg-gradient-to-r from-slate-800/60 to-slate-700/40 rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-xl border border-slate-600/30 backdrop-blur-sm">
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4">
-                  <div className="flex-1 min-w-0 text-center sm:text-left">
-                    <h2 className="text-lg sm:text-2xl font-bold text-white truncate mb-2">
-                      {currentGame.headers?.Event || 'Untitled Game'}
-                    </h2>
-                    <div className="flex flex-col xs:flex-row items-center gap-2 sm:gap-6 text-xs sm:text-sm">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 sm:w-3 sm:h-3 bg-white rounded-full"></div>
-                        <span className="font-semibold text-white truncate">{currentGame.headers?.White || 'Unknown'}</span>
-                        <span className="text-slate-400 hidden sm:inline">({currentGame.headers?.WhiteElo || '?'})</span>
-                      </div>
-                      <div className="text-slate-400 font-bold">vs</div>
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 sm:w-3 sm:h-3 bg-slate-800 rounded-full border border-slate-400"></div>
-                        <span className="font-semibold text-white truncate">{currentGame.headers?.Black || 'Unknown'}</span>
-                        <span className="text-slate-400 hidden sm:inline">({currentGame.headers?.BlackElo || '?'})</span>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center gap-3 sm:gap-4">
-                    <div className="text-center sm:text-right">
-                      <div className="text-lg sm:text-2xl font-bold text-white">
-                        {currentGame.headers?.Result || '*'}
-                      </div>
-                      <div className="text-xs sm:text-sm text-slate-400">
-                        {currentGame.headers?.Date || 'Unknown date'}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Current Move Indicator */}
-                {currentMove && (
-                  <div className="mt-3 sm:mt-4 p-2 sm:p-3 bg-slate-700/50 rounded-lg sm:rounded-xl border border-slate-600/50">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 sm:gap-3">
-                        <div className={`w-6 h-6 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-xs sm:text-sm font-bold ${
-                          currentMove.isWhite ? 'bg-white text-black' : 'bg-slate-800 text-white border border-slate-600'
-                        }`}>
-                          {currentMove.isWhite ? 'W' : 'B'}
-                        </div>
-                        <div>
-                          <div className="font-semibold text-white text-sm sm:text-base">
-                            Move {Math.floor(currentMove.number)}{currentMove.number % 1 === 0 ? '' : '...'} {currentMove.move}
-                          </div>
-                          <div className="text-xs text-slate-400">
-                            {currentPath.length > 0 ? `Position ${currentPath.length}` : 'Start position'}
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="flex items-center gap-1 sm:gap-2">
-                        <button 
-                          onClick={addBookmark}
-                          className="p-1.5 sm:p-2 bg-slate-600/50 hover:bg-slate-500/50 rounded-lg transition-colors"
-                          title="Bookmark this position"
-                        >
-                          <span className="text-sm sm:text-base">📑</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
 
             {/* Enhanced Chessboard Container with Larger Mobile Sizing */}
             <div className="relative">
@@ -1225,8 +1171,8 @@ export default function App() {
                       onClick={() => setFlipped(!flipped)}
                       className="px-3 sm:px-4 py-1.5 sm:py-2 bg-slate-700/50 hover:bg-slate-600/50 rounded-lg sm:rounded-xl border border-slate-600/50 transition-all duration-300 transform hover:scale-105 flex items-center gap-2 text-xs sm:text-sm"
                     >
-                      <span>🔄</span>
-                      {flipped ? 'Black Bottom' : 'White Bottom'}
+                      <span><img src="./flip.svg" alt="" className='h-[17px] w-[17px] ' /></span>
+                      {flipped ? 'Black side' : 'White side'}
                     </button>
                     
                     <div className="text-xs sm:text-sm text-slate-400 bg-slate-700/30 px-2 sm:px-3 py-1 rounded-full">
@@ -1323,6 +1269,64 @@ export default function App() {
                 ⏭️
               </button>
             </div>
+
+            {isMobile &&<div className="bg-slate-800/40 rounded-xl sm:rounded-2xl p-1 backdrop-blur-sm border border-slate-700/50">
+              <div className="flex space-x-1">
+                {['moves', 'analysis', 'info'].map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setActiveTab(tab)}
+                    className={`flex-1 py-2 px-2 sm:px-3 text-xs sm:text-sm font-medium rounded-lg sm:rounded-xl transition-all duration-300 capitalize ${
+                      activeTab === tab
+                        ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg'
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'
+                    }`}
+                  >
+                    {tab}
+                  </button>
+                ))}
+              </div>
+            </div> }
+            {/* Professional Moves List */}
+            {isMobile && currentGame && activeTab === 'moves' && (
+              <div className={` xl:hidden bg-slate-800/40 rounded-xl sm:rounded-2xl p-3 sm:p-4 shadow-xl border border-slate-700/50 backdrop-blur-sm transition-all duration-500 ${sidebarCollapsed ? 'opacity-0 scale-95' : 'opacity-100 scale-100'}`}>
+                <div className="flex items-center justify-between mb-3 sm:mb-4">
+                  <h3 className="text-base sm:text-lg font-semibold text-blue-300 flex items-center gap-2">
+                    <span className="text-lg">📋</span>
+                    Move List
+                    <span className="text-xs text-slate-400 bg-slate-700/50 px-2 py-1 rounded-full ml-2">
+                      {currentPath.length > 0 ? `${currentPath.length} moves` : 'Start position'}
+                    </span>
+                  </h3>
+                </div>
+                
+                <div className="max-h-64 sm:max-h-96 overflow-y-auto space-y-1 pr-2 custom-scrollbar">
+                  <MoveSequence 
+                    seq={currentGame.moves} 
+                    currentPath={currentPath} 
+                    onSelect={setCurrentPath} 
+                  />
+                </div>
+              </div>
+            )}
+
+            {isMobile && currentGame && activeTab === 'info' && (
+              <div className="bg-slate-800/40 rounded-xl sm:rounded-2xl p-3 sm:p-4 shadow-xl border border-slate-700/50 backdrop-blur-sm">
+                <h3 className="text-base sm:text-lg font-semibold text-blue-300 mb-3 sm:mb-4 flex items-center gap-2">
+                  <span>ℹ️</span>
+                  Game Information
+                </h3>
+                
+                <div className="space-y-2 sm:space-y-3">
+                  {Object.entries(currentGame.headers || {}).slice(0, 6).map(([key, value]) => (
+                    <div key={key} className="flex justify-between items-center py-1 sm:py-2 border-b border-slate-700/30 last:border-b-0">
+                      <span className="text-xs sm:text-sm text-slate-400 capitalize truncate mr-2">{key}:</span>
+                      <span className="text-xs sm:text-sm text-slate-200 font-medium text-right truncate">{value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Enhanced Right Panel */}
@@ -1460,7 +1464,7 @@ export default function App() {
             )}
 
             {/* Enhanced Keyboard Shortcuts */}
-            <div className="bg-slate-800/40 rounded-xl sm:rounded-2xl p-4 sm:p-5 shadow-xl border border-slate-700/50 backdrop-blur-sm">
+            {!isMobile && <div className=" bg-slate-800/40 rounded-xl sm:rounded-2xl p-4 sm:p-5 shadow-xl border border-slate-700/50 backdrop-blur-sm">
               <h3 className="text-base sm:text-lg font-semibold text-blue-300 mb-3 sm:mb-4 flex items-center gap-2">
                 <span>⌨️</span>
                 Keyboard Shortcuts
@@ -1492,10 +1496,11 @@ export default function App() {
                 ))}
               </div>
             </div>
-          </div>
+         
+ }
+  </div>
         </div>
       </div>
-
       {/* Enhanced Game Collection */}
       {games.length > 1 && (
         <div className="bg-slate-900/95 border-t border-slate-600/50 backdrop-blur-sm mt-8 sm:mt-12">
