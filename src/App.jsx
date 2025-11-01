@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, {  useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import './index.css';
 
 /**
@@ -40,6 +40,7 @@ const ChessUtils = {
     const [position] = fen.split(' ');
     return this.positionToBoard(position);
   },
+  
 
   boardToPosition(board) {
     const rows = board.map(row => {
@@ -57,6 +58,10 @@ const ChessUtils = {
     });
     return rows.join('/');
   },
+  boardToFen(board, active = 'w', castling = '-', enpass = '-', half = 0, full = 1) {
+  const position = this.boardToPosition(board);
+  return `${position} ${active} ${castling} ${enpass} ${half} ${full}`;
+},
 
   fenToState(fen) {
     const [position, active, castling, enpass, half, full] = fen.split(' ');
@@ -86,7 +91,6 @@ const ChessUtils = {
     const pieceWhite = piece === piece.toUpperCase();
     return pieceWhite !== isWhite;
   },
-
   executeMove(state, moveObj) {
     try {
       let { board, active, castling, enpass, halfmove, fullmove } = state;
@@ -395,6 +399,20 @@ const flattenSeq = (seq, prefix = []) => {
   return out;
 };
 
+// Simple evaluation function for fallback analysis
+const performSimpleEval = (fen) => {
+  // This is a very basic evaluation that just returns a random move
+  // In a real implementation, you'd want to integrate with a proper chess engine
+  const possibleMoves = ['e2e4', 'd2d4', 'g1f3', 'c2c4', 'e7e5', 'd7d5', 'g8f6', 'c7c5'];
+  const randomMove = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
+  
+  return {
+    bestmove: randomMove,
+    score: Math.random() > 0.5 ? '+0.12' : '-0.08',
+    line: `${randomMove} Nf6 Nc3 d5 exd5 Nxd5`
+  };
+};
+
 // Enhanced Professional MoveSequence inspired by Lichess
 const MoveSequence = React.memo(({ seq, pathPrefix = [], depth = 0, currentPath, onSelect, isInline = false }) => {
   const elements = [];
@@ -620,6 +638,380 @@ const GameNavigation = ({ currentGameIndex, totalGames, onPrevious, onNext, clas
   );
 };
 
+// Enhanced analysis utilities
+const AnalysisUtils = {
+  // Multiple analysis endpoints for better accuracy
+  getAnalysisEndpoints(fen, depth = 18) {
+    return [
+      // Primary: Lichess Cloud Eval (most reliable)
+      `https://lichess.org/api/cloud-eval?fen=${encodeURIComponent(fen)}&multiPv=1`,
+      
+      // Secondary: Stockfish Online with higher depth
+      `https://stockfish.online/api/s/v2.php?fen=${encodeURIComponent(fen)}&depth=${depth}`,
+      
+      // Fallback: Local simple evaluation
+      null // Will use local evaluation as fallback
+    ];
+  },
+
+  // Enhanced local evaluation with basic chess knowledge
+  performLocalEval(fen) {
+    try {
+      const board = ChessUtils.fenToBoard(fen);
+      let score = 0;
+      
+      // Piece values
+      const pieceValues = {
+        'P': 1, 'N': 3, 'B': 3, 'R': 5, 'Q': 9, 'K': 0,
+        'p': -1, 'n': -3, 'b': -3, 'r': -5, 'q': -9, 'k': 0
+      };
+      
+      // Count material
+      for (let row = 0; row < 8; row++) {
+        for (let col = 0; col < 8; col++) {
+          const piece = board[row][col];
+          if (piece) {
+            score += pieceValues[piece] || 0;
+          }
+        }
+      }
+      
+      // Basic positional knowledge (center control)
+      const centerSquares = [[3,3],[3,4],[4,3],[4,4]];
+      centerSquares.forEach(([r, c]) => {
+        const piece = board[r][c];
+        if (piece) {
+          if (piece === piece.toUpperCase()) score += 0.1; // White center control
+          else score -= 0.1; // Black center control
+        }
+      });
+      
+      // Development bonus (knights and bishops in starting position)
+      for (let col = 0; col < 8; col++) {
+        if (board[0][col] === 'N' || board[0][col] === 'B') score -= 0.1;
+        if (board[7][col] === 'n' || board[7][col] === 'b') score += 0.1;
+      }
+      
+      // Convert to pawn units and format
+      const formattedScore = (score / 100).toFixed(2);
+      const evalText = score > 0 ? `+${formattedScore}` : formattedScore;
+      
+      // Generate reasonable moves based on position
+      const possibleMoves = this.generateReasonableMoves(fen);
+      const bestMove = possibleMoves[0] || 'e2e4';
+      
+      return {
+        bestmove: bestMove,
+        evaluation: evalText,
+        analysis: `${bestMove} ${this.getContinuation(fen, bestMove)}`,
+        depth: 'local',
+        source: 'local'
+      };
+    } catch (e) {
+      console.error('Local eval error:', e);
+      return this.getFallbackAnalysis();
+    }
+  },
+
+  generateReasonableMoves(fen) {
+    const moves = [];
+    const state = ChessUtils.fenToState(fen);
+    const isWhite = state.active === 'w';
+    
+    // Common opening moves
+    if (fen === ChessUtils.initialFen) {
+      return ['e2e4', 'd2d4', 'g1f3', 'c2c4'];
+    }
+    
+    // Generate moves based on piece activity
+    const board = state.board;
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const piece = board[r][c];
+        if (!piece) continue;
+        
+        const pieceIsWhite = piece === piece.toUpperCase();
+        if (pieceIsWhite !== isWhite) continue;
+        
+        // Simple move generation for each piece type
+        const pieceType = piece.toLowerCase();
+        switch (pieceType) {
+          case 'p':
+            // Pawn moves
+            const dir = isWhite ? -1 : 1;
+            // Single push
+            if (this.isValidSquare(r + dir, c) && !board[r + dir][c]) {
+              moves.push(this.squareToAlgebraic(r, c, r + dir, c));
+              // Double push from starting position
+              if ((isWhite && r === 6) || (!isWhite && r === 1)) {
+                if (!board[r + 2 * dir][c]) {
+                  moves.push(this.squareToAlgebraic(r, c, r + 2 * dir, c));
+                }
+              }
+            }
+            // Captures
+            for (const dc of [-1, 1]) {
+              if (this.isValidSquare(r + dir, c + dc) && board[r + dir][c + dc] && 
+                  this.isOpponent(board[r + dir][c + dc], isWhite)) {
+                moves.push(this.squareToAlgebraic(r, c, r + dir, c + dc));
+              }
+            }
+            break;
+            
+          case 'n':
+            // Knight moves
+            const knightMoves = [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]];
+            for (const [dr, dc] of knightMoves) {
+              if (this.isValidSquare(r + dr, c + dc) && 
+                  (!board[r + dr][c + dc] || this.isOpponent(board[r + dr][c + dc], isWhite))) {
+                moves.push(this.squareToAlgebraic(r, c, r + dr, c + dc));
+              }
+            }
+            break;
+        }
+      }
+    }
+    
+    // Sort moves to prioritize center and captures
+    return moves.sort((a, b) => this.movePriority(a, b));
+  },
+
+  squareToAlgebraic(fromRow, fromCol, toRow, toCol) {
+    const files = 'abcdefgh';
+    const fromFile = files[fromCol];
+    const fromRank = 8 - fromRow;
+    const toFile = files[toCol];
+    const toRank = 8 - toRow;
+    return `${fromFile}${fromRank}${toFile}${toRank}`;
+  },
+
+  isValidSquare(row, col) {
+    return row >= 0 && row < 8 && col >= 0 && col < 8;
+  },
+
+  isOpponent(piece, isWhite) {
+    if (!piece) return false;
+    return (piece === piece.toUpperCase()) !== isWhite;
+  },
+
+  movePriority(moveA, moveB) {
+    // Prioritize center moves (e4, d4, e5, d5)
+    const centerMoves = ['e2e4', 'd2d4', 'e7e5', 'd7d5'];
+    if (centerMoves.includes(moveA)) return -1;
+    if (centerMoves.includes(moveB)) return 1;
+    
+    // Then prioritize captures
+    const isCaptureA = moveA.length === 4 && Math.abs(moveA.charCodeAt(0) - moveA.charCodeAt(2)) === 1;
+    const isCaptureB = moveB.length === 4 && Math.abs(moveB.charCodeAt(0) - moveB.charCodeAt(2)) === 1;
+    if (isCaptureA && !isCaptureB) return -1;
+    if (!isCaptureA && isCaptureB) return 1;
+    
+    return 0;
+  },
+
+  getContinuation(fen, firstMove) {
+    // Simple continuation based on common responses
+    const continuations = {
+      'e2e4': 'e7e5 g1f3 b8c6',
+      'd2d4': 'd7d5 c2c4',
+      'g1f3': 'd7d5 d2d4',
+      'e7e5': 'g1f3 b8c6 f1b5',
+      'd7d5': 'c2c4 e7e6'
+    };
+    return continuations[firstMove] || 'Nf6 Nc3 d5';
+  },
+
+  getFallbackAnalysis() {
+    return {
+      bestmove: 'e2e4',
+      evaluation: '0.00',
+      analysis: 'e2e4 e7e5 g1f3',
+      depth: 'fallback',
+      source: 'fallback'
+    };
+  },
+
+  // Parse Lichess cloud evaluation response
+  parseLichessResponse(data) {
+    if (!data || !data.pvs || !data.pvs[0]) {
+      throw new Error('Invalid Lichess response');
+    }
+    
+    const pv = data.pvs[0];
+    let evaluation;
+    
+    if (pv.mate) {
+      evaluation = `#${pv.mate}`;
+    } else {
+      // Convert centipawns to pawn units
+      const score = pv.cp / 100;
+      evaluation = score > 0 ? `+${score.toFixed(2)}` : score.toFixed(2);
+    }
+    
+    return {
+      bestmove: pv.moves.split(' ')[0],
+      evaluation: evaluation,
+      analysis: pv.moves,
+      depth: data.depth || 'cloud',
+      source: 'lichess'
+    };
+  },
+
+  // Parse Stockfish Online response
+  parseStockfishResponse(data) {
+    if (!data || typeof data.evaluation === 'undefined') {
+      throw new Error('Invalid Stockfish response');
+    }
+    
+    let evaluation;
+    if (typeof data.evaluation === 'number') {
+      evaluation = data.evaluation > 0 ? `+${data.evaluation.toFixed(2)}` : data.evaluation.toFixed(2);
+    } else {
+      evaluation = '0.00';
+    }
+    
+    return {
+      bestmove: data.bestmove || 'e2e4',
+      evaluation: evaluation,
+      analysis: data.pv || 'No line available',
+      depth: 'online',
+      source: 'stockfish'
+    };
+  }
+};
+
+// Enhanced Analysis Panel Component
+const AnalysisPanel = ({ analysis, isAnalyzing, onRunAnalysis, currentFEN }) => {
+  const [analysisHistory, setAnalysisHistory] = useState([]);
+
+  useEffect(() => {
+    if (analysis && !isAnalyzing) {
+      setAnalysisHistory(prev => [{
+        ...analysis,
+        timestamp: new Date().toLocaleTimeString(),
+        fen: currentFEN
+      }, ...prev.slice(0, 4)]); // Keep last 5 analyses
+    }
+  }, [analysis, isAnalyzing, currentFEN]);
+
+  const getEvaluationColor = (evalString) => {
+    if (!evalString) return 'text-slate-300';
+    if (evalString.startsWith('#')) return 'text-purple-400';
+    const score = parseFloat(evalString);
+    if (score > 0.5) return 'text-green-400';
+    if (score > 0.2) return 'text-green-300';
+    if (score < -0.5) return 'text-red-400';
+    if (score < -0.2) return 'text-red-300';
+    return 'text-slate-300';
+  };
+
+  const formatEvaluation = (evalString) => {
+    if (!evalString) return 'N/A';
+    if (evalString.startsWith('#')) {
+      const moves = evalString.substring(1);
+      return `Mate in ${moves}`;
+    }
+    return evalString;
+  };
+
+  return (
+    <div className="bg-slate-800/40 rounded-xl sm:rounded-2xl p-3 sm:p-4 shadow-xl border border-slate-700/50 backdrop-blur-sm">
+      <div className="flex justify-between items-center mb-3">
+        <h3 className="text-base sm:text-lg font-semibold text-blue-300 flex items-center gap-2">
+          <span className="text-lg">🔍</span> 
+          Position Analysis
+          {analysis?.source && (
+            <span className="text-xs bg-slate-700/50 px-2 py-1 rounded-full capitalize">
+              {analysis.source}
+            </span>
+          )}
+        </h3>
+        <button
+          onClick={onRunAnalysis}
+          disabled={isAnalyzing}
+          className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white text-xs px-3 py-1.5 rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 transform hover:scale-105"
+        >
+          {isAnalyzing ? (
+            <span className="flex items-center gap-1">
+              <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              Analyzing...
+            </span>
+          ) : (
+            'Run Analysis'
+          )}
+        </button>
+      </div>
+
+      {analysis ? (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-slate-700/30 rounded-lg p-3">
+              <div className="text-xs text-slate-400 mb-1">Evaluation</div>
+              <div className={`text-lg font-bold ${getEvaluationColor(analysis.evaluation)}`}>
+                {formatEvaluation(analysis.evaluation)}
+              </div>
+            </div>
+            <div className="bg-slate-700/30 rounded-lg p-3">
+              <div className="text-xs text-slate-400 mb-1">Best Move</div>
+              <div className="text-lg font-bold text-white font-mono">
+                {analysis.bestmove}
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-slate-700/30 rounded-lg p-3">
+            <div className="text-xs text-slate-400 mb-1">Variation</div>
+            <div className="text-sm text-white font-mono leading-relaxed">
+              {analysis.analysis}
+            </div>
+          </div>
+
+          {analysis.depth && (
+            <div className="text-xs text-slate-400 text-right">
+              Depth: {analysis.depth}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="text-center py-6">
+          <div className="text-4xl mb-3">♟️</div>
+          <p className="text-slate-400 text-sm mb-3">
+            Get computer analysis for the current position
+          </p>
+          <div className="text-xs text-slate-500 space-y-1">
+            <p>• Multiple engine sources</p>
+            <p>• Accurate evaluations</p>
+            <p>• Best move suggestions</p>
+          </div>
+        </div>
+      )}
+
+      {/* Analysis History */}
+      {analysisHistory.length > 0 && (
+        <div className="mt-4 pt-4 border-t border-slate-700/30">
+          <div className="text-xs text-slate-400 mb-2 flex items-center justify-between">
+            <span>Recent Analyses</span>
+            <span className="text-slate-500">{analysisHistory.length}</span>
+          </div>
+          <div className="space-y-2 max-h-32 overflow-y-auto">
+            {analysisHistory.map((item, idx) => (
+              <div key={idx} className="flex items-center justify-between text-xs bg-slate-700/20 rounded p-2">
+                <div className={`font-mono ${getEvaluationColor(item.evaluation)}`}>
+                  {formatEvaluation(item.evaluation)}
+                </div>
+                <div className="text-slate-500 text-xs">{item.timestamp}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// In the main App component, replace the analysis state and functions:
+
+
 /* -------------------------
    Main Enhanced App
    ------------------------- */
@@ -639,6 +1031,7 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeTab, setActiveTab] = useState('moves');
   const [isMobile, setIsMobile] = useState(false);
+
 
   const fileInputRef = useRef(null);
   const parseTimerRef = useRef(null);
@@ -686,7 +1079,7 @@ export default function App() {
 16. Bh4 c5 17. dxe5 Nxe4 18. Bxe7 Qxe7 19. exd6 Qf6 20. Nbd2 Nxd6
 21. Nc4 Nxc4 22. Bxc4 Nb6 23. Ne5 Rae8 24. Bxf7+ Rxf7 25. Nxf7 Rxe1+
 26. Qxe1 Kxf7 27. Qe3 Qg5 28. Qxg5 hxg5 29. b3 Ke6 30. a3 Kd6
-31. axb4 cxb4 32. Ra5 Nd5 33. f3 Bc8 34. Kf2 Bf5 35. Ra7 g6
+31. axb4 cxb4 32. Ra1 Nd5 33. f3 Bc8 34. Kf2 Bf5 35. Ra7 g6
 36. Ra6+ Kc5 37. Ke1 Nf4 38. g3 Nxh3 39. Kd2 Kb5 40. Rd6 Kc5
 41. Ra6 Nf2 42. g4 Bd3 43. Re6 1/2-1/2`;
     setPgnText(samplePGN);
@@ -882,14 +1275,8 @@ export default function App() {
     setTimeout(() => setNotice(''), 1500);
   }, []);
 
-  const exportFEN = useCallback(() => {
-    let active = 'w';
-    if (currentGame && currentPath.length > 0) {
-      active = currentMove.isWhite ? 'b' : 'w';
-    }
-    const fen = ChessUtils.boardToFen(board, active);
-  }, [board, currentGame, currentPath, currentMove, copyToClipboard]);  // Note: boardToFen not defined, assuming typo in original, keep as is or fix if needed
-
+  // Fixed FEN export function
+ 
   const exportPGN = useCallback(() => {
     if (!currentGame) { 
       setNotice('❌ No game to export'); 
@@ -959,7 +1346,119 @@ export default function App() {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [navigateMove, goToStart, goToEnd, addBookmark, flipped, theme, goToPreviousGame, goToNextGame]);
+  
+  const [analysis, setAnalysis] = useState(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisHistory, setAnalysisHistory] = useState([]);
 
+  // Fixed FEN export function
+  const getCurrentFEN = useCallback(() => {
+    let fen = ChessUtils.initialFen;
+    
+    if (currentGame) {
+      if (currentPath.length > 0 && currentMove?.fenAfter) {
+        fen = currentMove.fenAfter;
+      } else {
+        fen = currentGame.initialFen || ChessUtils.initialFen;
+      }
+    }
+    
+    // Validate FEN
+    if (!fen || fen.includes('undefined') || fen.split(' ').length < 4) {
+      return ChessUtils.initialFen;
+    }
+    
+    return fen;
+  }, [currentGame, currentPath, currentMove]);
+
+  const exportFEN = useCallback(() => {
+    const fen = getCurrentFEN();
+    copyToClipboard(fen, 'FEN copied to clipboard');
+  }, [getCurrentFEN, copyToClipboard]);
+
+  // Enhanced analysis function with multiple fallbacks
+  const runAnalysis = useCallback(async () => {
+    const fen = getCurrentFEN();
+    
+    if (!fen || fen === ChessUtils.initialFen) {
+      setNotice('❌ Please navigate to a game position first');
+      setTimeout(() => setNotice(''), 2000);
+      return;
+    }
+
+    setIsAnalyzing(true);
+    setAnalysis(null);
+
+    try {
+      const endpoints = AnalysisUtils.getAnalysisEndpoints(fen, 20);
+      let analysisResult = null;
+      let lastError = null;
+
+      // Try each endpoint in sequence
+      for (const endpoint of endpoints) {
+        try {
+          if (!endpoint) {
+            // Local evaluation fallback
+            analysisResult = AnalysisUtils.performLocalEval(fen);
+            break;
+          }
+
+          const response = await fetch(endpoint, {
+            headers: {
+              'User-Agent': 'ChessPGNViewer/1.0',
+              'Accept': 'application/json'
+            }
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+
+          const data = await response.json();
+
+          if (endpoint.includes('lichess.org')) {
+            analysisResult = AnalysisUtils.parseLichessResponse(data);
+          } else {
+            analysisResult = AnalysisUtils.parseStockfishResponse(data);
+          }
+
+          if (analysisResult) break;
+
+        } catch (error) {
+          lastError = error;
+          console.warn(`Analysis endpoint failed: ${endpoint}`, error.message);
+          continue;
+        }
+      }
+
+      if (!analysisResult) {
+        throw new Error('All analysis endpoints failed');
+      }
+
+      setAnalysis(analysisResult);
+      
+      // Add to history
+      setAnalysisHistory(prev => [{
+        ...analysisResult,
+        timestamp: new Date().toLocaleTimeString(),
+        fen: fen
+      }, ...prev.slice(0, 9)]); // Keep last 10 analyses
+
+      setNotice(`✅ Analysis complete (${analysisResult.source})`);
+      
+    } catch (error) {
+      console.error('Analysis failed:', error);
+      
+      // Final fallback
+      const fallbackAnalysis = AnalysisUtils.performLocalEval(fen);
+      setAnalysis(fallbackAnalysis);
+      
+      setNotice('⚠️ Using basic analysis (engines unavailable)');
+    } finally {
+      setIsAnalyzing(false);
+      setTimeout(() => setNotice(''), 3000);
+    }
+  }, [getCurrentFEN]);
   return (
     <div className={`min-h-screen transition-all duration-500 ${
       theme === 'dark' 
@@ -1073,23 +1572,6 @@ export default function App() {
             </div>
 
             {/* Enhanced Navigation Tabs */}
-            {!isMobile &&<div className="bg-slate-800/40 rounded-xl sm:rounded-2xl p-1 backdrop-blur-sm border border-slate-700/50">
-              <div className="flex space-x-1">
-                {['moves', 'analysis', 'info'].map((tab) => (
-                  <button
-                    key={tab}
-                    onClick={() => setActiveTab(tab)}
-                    className={`flex-1 py-2 px-2 sm:px-3 text-xs sm:text-sm font-medium rounded-lg sm:rounded-xl transition-all duration-300 capitalize ${
-                      activeTab === tab
-                        ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg'
-                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'
-                    }`}
-                  >
-                    {tab}
-                  </button>
-                ))}
-              </div>
-            </div> }
                 {!isMobile &&<div className="bg-slate-800/40 rounded-xl sm:rounded-2xl p-1 backdrop-blur-sm border border-slate-700/50">
               <div className="flex space-x-1">
                 {['moves', 'analysis', 'info'].map((tab) => (
@@ -1129,6 +1611,16 @@ export default function App() {
                 </div>
               </div>
             )}
+            {/* Advanced Analysis Panel */}
+             {!isMobile && activeTab === 'analysis' && (
+    <AnalysisPanel
+      analysis={analysis}
+      isAnalyzing={isAnalyzing}
+      onRunAnalysis={runAnalysis}
+      currentFEN={getCurrentFEN()}
+    />
+  )}
+           
 
             {/* Game Information Panel */}
             {!isMobile && currentGame && activeTab === 'info' && (
@@ -1309,6 +1801,16 @@ export default function App() {
                 </div>
               </div>
             )}
+            {/* Advanced Analysis Panel */}
+             {isMobile && activeTab === 'analysis' && (
+    <AnalysisPanel
+      analysis={analysis}
+      isAnalyzing={isAnalyzing}
+      onRunAnalysis={runAnalysis}
+      currentFEN={getCurrentFEN()}
+    />
+  )}
+            
 
             {isMobile && currentGame && activeTab === 'info' && (
               <div className="bg-slate-800/40 rounded-xl sm:rounded-2xl p-3 sm:p-4 shadow-xl border border-slate-700/50 backdrop-blur-sm">
