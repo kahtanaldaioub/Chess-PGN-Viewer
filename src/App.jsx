@@ -951,20 +951,10 @@ const AnalysisPanel = ({ analysis, isAnalyzing, onRunAnalysis, currentFEN }) => 
                 {formatEvaluation(analysis.evaluation)}
               </div>
             </div>
-            <div className="bg-slate-700/30 rounded-lg p-3">
-              <div className="text-xs text-slate-400 mb-1">Best Move</div>
-              <div className="text-lg font-bold text-white font-mono">
-                {analysis.bestmove}
-              </div>
-            </div>
+           
           </div>
 
-          <div className="bg-slate-700/30 rounded-lg p-3">
-            <div className="text-xs text-slate-400 mb-1">Variation</div>
-            <div className="text-sm text-white font-mono leading-relaxed">
-              {analysis.analysis}
-            </div>
-          </div>
+         
 
           {analysis.depth && (
             <div className="text-xs text-slate-400 text-right">
@@ -981,27 +971,6 @@ const AnalysisPanel = ({ analysis, isAnalyzing, onRunAnalysis, currentFEN }) => 
           <div className="text-xs text-slate-500 space-y-1">
             <p>• Multiple engine sources</p>
             <p>• Accurate evaluations</p>
-            <p>• Best move suggestions</p>
-          </div>
-        </div>
-      )}
-
-      {/* Analysis History */}
-      {analysisHistory.length > 0 && (
-        <div className="mt-4 pt-4 border-t border-slate-700/30">
-          <div className="text-xs text-slate-400 mb-2 flex items-center justify-between">
-            <span>Recent Analyses</span>
-            <span className="text-slate-500">{analysisHistory.length}</span>
-          </div>
-          <div className="space-y-2 max-h-32 overflow-y-auto">
-            {analysisHistory.map((item, idx) => (
-              <div key={idx} className="flex items-center justify-between text-xs bg-slate-700/20 rounded p-2">
-                <div className={`font-mono ${getEvaluationColor(item.evaluation)}`}>
-                  {formatEvaluation(item.evaluation)}
-                </div>
-                <div className="text-slate-500 text-xs">{item.timestamp}</div>
-              </div>
-            ))}
           </div>
         </div>
       )}
@@ -1009,7 +978,6 @@ const AnalysisPanel = ({ analysis, isAnalyzing, onRunAnalysis, currentFEN }) => 
   );
 };
 
-// In the main App component, replace the analysis state and functions:
 
 
 /* -------------------------
