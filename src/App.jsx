@@ -647,7 +647,7 @@ const AnalysisUtils = {
       `https://lichess.org/api/cloud-eval?fen=${encodeURIComponent(fen)}&multiPv=1`,
       
       // Secondary: Stockfish Online with higher depth
-      `https://stockfish.online/api/s/v2.php?fen=${encodeURIComponent(fen)}&depth=${depth}`,
+      `https://stockfish.online/api/s/v2.php?fen=${encodeURIComponent(fen)}&depth=15`,
       
       // Fallback: Local simple evaluation
       null // Will use local evaluation as fallback
